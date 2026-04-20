@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pro PDF Editor - HD Save</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body{
+    margin:0;
+    font-family:Arial,sans-serif;
+    background:#f0f2f5;
+}
+.toolbar{
+    padding:10px;
+    background:#fff;
+    box-shadow:0 2px 5px rgba(0,0,0,.1);
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    position:sticky;
+    top:0;
+    z-index:1000;
+}
+button,input{
+    padding:6px;
+}
+#workspace{
+    padding:20px;
+    text-align:center;
+}
+#editor{
+    position:relative;
+    display:inline-block;
+    background:#fff;
+    border:1px solid #ccc;
+}
+canvas{
+    display:block;
+}
+.item{
+    position:absolute;
+    min-width:50px;
+    outline:none;
+    background:transparent;
+    cursor:move;
+    user-select:none;
+}
+.selected{
+    border:1px dashed blue;
+}
+img.item{
+    resize:both;
+    overflow:auto;
+}
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+    <input type="file" id="pdfUpload" accept="application/pdf">
+
+    <button onclick="addText()">Add Text</button>
+
+    <input type="file" id="imgUpload" accept="image/*">
+
+    <button onclick="decreaseFont()">A-</button>
+    <input type="number" id="fontSize" value="20" style="width:70px">
+    <button onclick="increaseFont()">A+</button>
+
+    <input type="color" id="fontColor" value="#000000">
+
+    <button onclick="styleText('bold')">Bold</button>
+    <button onclick="styleText('italic')">Italic</button>
+    <button onclick="styleText('underline')">Underline</button>
+
+    <button onclick="deleteSelected()">Delete</button>
+
+    <button onclick="zoomOut()">-</button>
+    <button onclick="zoomIn()">+</button>
+
+    <button onclick="savePNG()">Save PNG</button>
+    <button onclick="savePDF()">Save PDF</button>
+</div>
+
+<div id="workspace">
+    <div id="editor">
+        <canvas id="pdfCanvas"></canvas>
+    </div>
+</div>
+
+<script>
+let pdfDoc=null;
+let scale=4.0;
+let selected=null;
+
+const editor=document.getElementById("editor");
+const canvas=document.getElementById("pdfCanvas");
+const ctx=canvas.getContext("2d");
+
+document.getElementById("pdfUpload").addEventListener("change", async e=>{
+    const file=e.target.files[0];
+    if(!file) return;
+
+    const bytes=await file.arrayBuffer();
+    pdfDoc=await pdfjsLib.getDocument({data:bytes}).promise;
+    renderPage();
+});
+
+async function renderPage(){
+    const page=await pdfDoc.getPage(1);
+    const viewport=page.getViewport({scale});
+
+    canvas.width=viewport.width;
+    canvas.height=viewport.height;
+
+    editor.style.width=viewport.width+"px";
+    editor.style.height=viewport.height+"px";
+
+    await page.render({
+        canvasContext:ctx,
+        viewport:viewport
+    }).promise;
+}
+
+function addText(){
+    const div=document.createElement("div");
+    div.className="item";
+    div.contentEditable=true;
+    div.innerText="Text";
+    div.style.left="50px";
+    div.style.top="50px";
+    div.style.fontSize=document.getElementById("fontSize").value+"px";
+    div.style.color=document.getElementById("fontColor").value;
+    div.style.fontWeight="normal";
+    div.style.fontStyle="normal";
+    div.style.textDecoration="none";
+
+    div.onblur=()=>div.contentEditable=true;
+
+    editor.appendChild(div);
+    activate(div);
+    selectItem(div);
+}
+
+document.getElementById("imgUpload").addEventListener("change", e=>{
+    const file=e.target.files[0];
+    if(!file) return;
+
+    const url=URL.createObjectURL(file);
+
+    const img=document.createElement("img");
+    img.src=url;
+    img.className="item";
+    img.style.left="80px";
+    img.style.top="80px";
+    img.style.width="120px";
+
+    editor.appendChild(img);
+    activate(img);
+    selectItem(img);
+});
+
+function activate(el){
+    drag(el);
+
+    el.addEventListener("click", function(e){
+        e.stopPropagation();
+        selectItem(el);
+    });
+}
+
+function selectItem(el){
+    document.querySelectorAll(".item").forEach(i=>i.classList.remove("selected"));
+    selected=el;
+    el.classList.add("selected");
+
+    if(el.tagName!=="IMG"){
+        document.getElementById("fontSize").value=parseInt(el.style.fontSize)||20;
+        document.getElementById("fontColor").value=rgbToHex(el.style.color);
+    }
+}
+
+function drag(el){
+    let down=false,ox=0,oy=0;
+
+    el.addEventListener("mousedown", function(e){
+        down=true;
+        ox=e.offsetX;
+        oy=e.offsetY;
+    });
+
+    document.addEventListener("mousemove", function(e){
+        if(!down) return;
+
+        const rect=editor.getBoundingClientRect();
+
+        el.style.left=(e.clientX-rect.left-ox)+"px";
+        el.style.top=(e.clientY-rect.top-oy)+"px";
+    });
+
+    document.addEventListener("mouseup", function(){
+        down=false;
+    });
+}
+
+document.body.addEventListener("click", function(e){
+    if(!editor.contains(e.target)){
+        clearSelection();
+        selected=null;
+    }
+});
+
+function increaseFont(){
+    if(selected && selected.tagName!=="IMG"){
+        let size=parseInt(selected.style.fontSize)||20;
+        if(size<100){
+            size+=2;
+            selected.style.fontSize=size+"px";
+            document.getElementById("fontSize").value=size;
+        }
+    }
+}
+
+function decreaseFont(){
+    if(selected && selected.tagName!=="IMG"){
+        let size=parseInt(selected.style.fontSize)||20;
+        if(size>8){
+            size-=2;
+            selected.style.fontSize=size+"px";
+            document.getElementById("fontSize").value=size;
+        }
+    }
+}
+
+document.getElementById("fontSize").addEventListener("input", function(){
+    if(selected && selected.tagName!=="IMG"){
+        let size=parseInt(this.value)||20;
+        size=Math.max(8,Math.min(100,size));
+        selected.style.fontSize=size+"px";
+        this.value=size;
+    }
+});
+
+document.getElementById("fontColor").addEventListener("input", function(){
+    if(selected && selected.tagName!=="IMG"){
+        selected.style.color=this.value;
+    }
+});
+
+function styleText(type){
+    if(!selected || selected.tagName==="IMG") return;
+
+    if(type==="bold"){
+        selected.style.fontWeight=
+            selected.style.fontWeight==="bold"?"normal":"bold";
+    }
+
+    if(type==="italic"){
+        selected.style.fontStyle=
+            selected.style.fontStyle==="italic"?"normal":"italic";
+    }
+
+    if(type==="underline"){
+        selected.style.textDecoration=
+            selected.style.textDecoration==="underline"?"none":"underline";
+    }
+}
+
+function deleteSelected(){
+    if(selected){
+        selected.remove();
+        selected=null;
+    }
+}
+
+function zoomIn(){
+    if(scale<3){
+        scale+=0.2;
+        renderPage();
+    }
+}
+
+function zoomOut(){
+    if(scale>0.6){
+        scale-=0.2;
+        renderPage();
+    }
+}
+
+function clearSelection(){
+    document.querySelectorAll(".item").forEach(i=>i.classList.remove("selected"));
+}
+
+async function savePNG(){
+    clearSelection();
+
+    const finalCanvas = await html2canvas(editor,{
+        scale:3,
+        useCORS:true,
+        backgroundColor:null
+    });
+
+    const link=document.createElement("a");
+    link.download="edited-template.png";
+    link.href=finalCanvas.toDataURL("image/png",1.0);
+    link.click();
+}
+
+async function savePDF(){
+    clearSelection();
+
+    const finalCanvas = await html2canvas(editor,{
+        scale:3,
+        useCORS:true,
+        backgroundColor:"#ffffff"
+    });
+
+    const imgData = finalCanvas.toDataURL("image/png",1.0);
+
+    const { jsPDF } = window.jspdf;
+
+    const pdfWidth = finalCanvas.width;
+    const pdfHeight = finalCanvas.height;
+
+    const pdf = new jsPDF({
+        orientation: pdfWidth > pdfHeight ? "landscape" : "portrait",
+        unit:"px",
+        format:[pdfWidth,pdfHeight],
+        compress:false
+    });
+
+    pdf.addImage(imgData,"PNG",0,0,pdfWidth,pdfHeight,undefined,"FAST");
+    pdf.save("edited-template-hd.pdf");
+}
+
+function rgbToHex(rgb){
+    if(!rgb || rgb.startsWith("#")) return rgb || "#000000";
+
+    const nums=rgb.match(/\d+/g);
+    if(!nums) return "#000000";
+
+    return "#" + nums.slice(0,3).map(x=>{
+        const hex=parseInt(x).toString(16);
+        return hex.length===1 ? "0"+hex : hex;
+    }).join("");
+}
+</script>
+
+</body>
+</html>
