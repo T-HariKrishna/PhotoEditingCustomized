@@ -2,352 +2,213 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pro PDF Editor - HD Save</title>
+<title>HD PDF Editor</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
-body{
-    margin:0;
-    font-family:Arial,sans-serif;
-    background:#f0f2f5;
+body {
+  font-family: sans-serif;
+  padding: 20px;
 }
-.toolbar{
-    padding:10px;
-    background:#fff;
-    box-shadow:0 2px 5px rgba(0,0,0,.1);
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-    position:sticky;
-    top:0;
-    z-index:1000;
+
+.toolbar {
+  margin-bottom: 10px;
+  background: #f3f3f3;
+  padding: 10px;
+  border-radius: 8px;
 }
-button,input{
-    padding:6px;
+
+button, input {
+  margin: 5px;
+  padding: 5px;
 }
-#workspace{
-    padding:20px;
-    text-align:center;
-}
-#editor{
-    position:relative;
-    display:inline-block;
-    background:#fff;
-    border:1px solid #ccc;
-}
-canvas{
-    display:block;
-}
-.item{
-    position:absolute;
-    min-width:50px;
-    outline:none;
-    background:transparent;
-    cursor:move;
-    user-select:none;
-}
-.selected{
-    border:1px dashed blue;
-}
-img.item{
-    resize:both;
-    overflow:auto;
+
+canvas {
+  border: 1px solid black;
 }
 </style>
 </head>
+
 <body>
 
+<h2>HD PDF Editor</h2>
+
 <div class="toolbar">
-    <input type="file" id="pdfUpload" accept="application/pdf">
+  <input type="file" id="pdfUpload">
 
-    <button onclick="addText()">Add Text</button>
+  <button onclick="addText()">Add Text</button>
+  <button onclick="makeBold()">Bold</button>
+  <button onclick="makeItalic()">Italic</button>
+  <input type="number" id="fontSize" placeholder="Font Size">
 
-    <input type="file" id="imgUpload" accept="image/*">
+  <input type="file" id="imgUpload">
 
-    <button onclick="decreaseFont()">A-</button>
-    <input type="number" id="fontSize" value="20" style="width:70px">
-    <button onclick="increaseFont()">A+</button>
+  <button onclick="increaseSize()">Image +</button>
+  <button onclick="decreaseSize()">Image -</button>
 
-    <input type="color" id="fontColor" value="#000000">
-
-    <button onclick="styleText('bold')">Bold</button>
-    <button onclick="styleText('italic')">Italic</button>
-    <button onclick="styleText('underline')">Underline</button>
-
-    <button onclick="deleteSelected()">Delete</button>
-
-    <button onclick="zoomOut()">-</button>
-    <button onclick="zoomIn()">+</button>
-
-    <button onclick="savePNG()">Save PNG</button>
-    <button onclick="savePDF()">Save PDF</button>
+  <button onclick="downloadPDF()">Download PDF</button>
+  <button onclick="downloadImage()">Download Image</button>
 </div>
 
-<div id="workspace">
-    <div id="editor">
-        <canvas id="pdfCanvas"></canvas>
-    </div>
-</div>
+<canvas id="canvas"></canvas>
 
 <script>
-let pdfDoc=null;
-let scale=4.0;
-let selected=null;
+// 🔥 High DPI setting
+fabric.devicePixelRatio = 3;
 
-const editor=document.getElementById("editor");
-const canvas=document.getElementById("pdfCanvas");
-const ctx=canvas.getContext("2d");
+const canvas = new fabric.Canvas('canvas');
 
-document.getElementById("pdfUpload").addEventListener("change", async e=>{
-    const file=e.target.files[0];
-    if(!file) return;
+/* ---------------- PDF Upload (HD Render) ---------------- */
+document.getElementById('pdfUpload').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  const reader = new FileReader();
 
-    const bytes=await file.arrayBuffer();
-    pdfDoc=await pdfjsLib.getDocument({data:bytes}).promise;
-    renderPage();
+  reader.onload = function() {
+    const typedarray = new Uint8Array(this.result);
+
+    pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+      pdf.getPage(1).then(page => {
+
+        const scale = 3; // 🔥 HIGH QUALITY
+        const viewport = page.getViewport({ scale });
+
+        const tempCanvas = document.createElement('canvas');
+        const context = tempCanvas.getContext('2d');
+
+        tempCanvas.width = viewport.width;
+        tempCanvas.height = viewport.height;
+
+        page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise.then(() => {
+
+          const imgData = tempCanvas.toDataURL("image/png");
+
+          fabric.Image.fromURL(imgData, function(img) {
+            img.selectable = false;
+
+            canvas.setWidth(img.width);
+            canvas.setHeight(img.height);
+
+            canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+          });
+
+        });
+      });
+    });
+  };
+
+  reader.readAsArrayBuffer(file);
 });
 
-async function renderPage(){
-    const page=await pdfDoc.getPage(1);
-    const viewport=page.getViewport({scale});
-
-    canvas.width=viewport.width;
-    canvas.height=viewport.height;
-
-    editor.style.width=viewport.width+"px";
-    editor.style.height=viewport.height+"px";
-
-    await page.render({
-        canvasContext:ctx,
-        viewport:viewport
-    }).promise;
+/* ---------------- Text ---------------- */
+function addText() {
+  const text = new fabric.IText("Edit me", {
+    left: 100,
+    top: 100,
+    fontSize: 30
+  });
+  canvas.add(text);
 }
 
-function addText(){
-    const div=document.createElement("div");
-    div.className="item";
-    div.contentEditable=true;
-    div.innerText="Text";
-    div.style.left="50px";
-    div.style.top="50px";
-    div.style.fontSize=document.getElementById("fontSize").value+"px";
-    div.style.color=document.getElementById("fontColor").value;
-    div.style.fontWeight="normal";
-    div.style.fontStyle="normal";
-    div.style.textDecoration="none";
-
-    div.onblur=()=>div.contentEditable=true;
-
-    editor.appendChild(div);
-    activate(div);
-    selectItem(div);
+function makeBold() {
+  const obj = canvas.getActiveObject();
+  if (obj) {
+    obj.set("fontWeight", obj.fontWeight === "bold" ? "normal" : "bold");
+    canvas.renderAll();
+  }
 }
 
-document.getElementById("imgUpload").addEventListener("change", e=>{
-    const file=e.target.files[0];
-    if(!file) return;
+function makeItalic() {
+  const obj = canvas.getActiveObject();
+  if (obj) {
+    obj.set("fontStyle", obj.fontStyle === "italic" ? "normal" : "italic");
+    canvas.renderAll();
+  }
+}
 
-    const url=URL.createObjectURL(file);
-
-    const img=document.createElement("img");
-    img.src=url;
-    img.className="item";
-    img.style.left="80px";
-    img.style.top="80px";
-    img.style.width="120px";
-
-    editor.appendChild(img);
-    activate(img);
-    selectItem(img);
+document.getElementById('fontSize').addEventListener('change', function() {
+  const obj = canvas.getActiveObject();
+  if (obj) {
+    obj.set("fontSize", parseInt(this.value));
+    canvas.renderAll();
+  }
 });
 
-function activate(el){
-    drag(el);
+/* ---------------- Image Upload ---------------- */
+document.getElementById('imgUpload').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  const reader = new FileReader();
 
-    el.addEventListener("click", function(e){
-        e.stopPropagation();
-        selectItem(el);
+  reader.onload = function() {
+    fabric.Image.fromURL(this.result, function(img) {
+      img.set({
+        left: 100,
+        top: 100,
+        scaleX: 0.5,
+        scaleY: 0.5
+      });
+      canvas.add(img);
     });
-}
+  };
 
-function selectItem(el){
-    document.querySelectorAll(".item").forEach(i=>i.classList.remove("selected"));
-    selected=el;
-    el.classList.add("selected");
-
-    if(el.tagName!=="IMG"){
-        document.getElementById("fontSize").value=parseInt(el.style.fontSize)||20;
-        document.getElementById("fontColor").value=rgbToHex(el.style.color);
-    }
-}
-
-function drag(el){
-    let down=false,ox=0,oy=0;
-
-    el.addEventListener("mousedown", function(e){
-        down=true;
-        ox=e.offsetX;
-        oy=e.offsetY;
-    });
-
-    document.addEventListener("mousemove", function(e){
-        if(!down) return;
-
-        const rect=editor.getBoundingClientRect();
-
-        el.style.left=(e.clientX-rect.left-ox)+"px";
-        el.style.top=(e.clientY-rect.top-oy)+"px";
-    });
-
-    document.addEventListener("mouseup", function(){
-        down=false;
-    });
-}
-
-document.body.addEventListener("click", function(e){
-    if(!editor.contains(e.target)){
-        clearSelection();
-        selected=null;
-    }
+  reader.readAsDataURL(file);
 });
 
-function increaseFont(){
-    if(selected && selected.tagName!=="IMG"){
-        let size=parseInt(selected.style.fontSize)||20;
-        if(size<100){
-            size+=2;
-            selected.style.fontSize=size+"px";
-            document.getElementById("fontSize").value=size;
-        }
-    }
+/* ---------------- Image Resize Buttons ---------------- */
+function increaseSize() {
+  const obj = canvas.getActiveObject();
+  if (obj && obj.type === 'image') {
+    obj.scaleX += 0.1;
+    obj.scaleY += 0.1;
+    canvas.renderAll();
+  }
 }
 
-function decreaseFont(){
-    if(selected && selected.tagName!=="IMG"){
-        let size=parseInt(selected.style.fontSize)||20;
-        if(size>8){
-            size-=2;
-            selected.style.fontSize=size+"px";
-            document.getElementById("fontSize").value=size;
-        }
-    }
+function decreaseSize() {
+  const obj = canvas.getActiveObject();
+  if (obj && obj.type === 'image') {
+    obj.scaleX -= 0.1;
+    obj.scaleY -= 0.1;
+    canvas.renderAll();
+  }
 }
 
-document.getElementById("fontSize").addEventListener("input", function(){
-    if(selected && selected.tagName!=="IMG"){
-        let size=parseInt(this.value)||20;
-        size=Math.max(8,Math.min(100,size));
-        selected.style.fontSize=size+"px";
-        this.value=size;
-    }
-});
+/* ---------------- Download PDF (HD) ---------------- */
+function downloadPDF() {
+  const { jsPDF } = window.jspdf;
 
-document.getElementById("fontColor").addEventListener("input", function(){
-    if(selected && selected.tagName!=="IMG"){
-        selected.style.color=this.value;
-    }
-});
+  const imgData = canvas.toDataURL({
+    format: "jpeg",
+    quality: 0.8,
+    multiplier: 2
+  });
 
-function styleText(type){
-    if(!selected || selected.tagName==="IMG") return;
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "px",
+    format: [canvas.width, canvas.height]
+  });
 
-    if(type==="bold"){
-        selected.style.fontWeight=
-            selected.style.fontWeight==="bold"?"normal":"bold";
-    }
-
-    if(type==="italic"){
-        selected.style.fontStyle=
-            selected.style.fontStyle==="italic"?"normal":"italic";
-    }
-
-    if(type==="underline"){
-        selected.style.textDecoration=
-            selected.style.textDecoration==="underline"?"none":"underline";
-    }
+  pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+  pdf.save("edited.pdf");
 }
 
-function deleteSelected(){
-    if(selected){
-        selected.remove();
-        selected=null;
-    }
-}
+/* ---------------- Download Image (HD) ---------------- */
+function downloadImage() {
+  const link = document.createElement("a");
 
-function zoomIn(){
-    if(scale<3){
-        scale+=0.2;
-        renderPage();
-    }
-}
+  link.download = "image.png";
+  link.href = canvas.toDataURL({
+    format: "png",
+    multiplier: 3 // 🔥 HD
+  });
 
-function zoomOut(){
-    if(scale>0.6){
-        scale-=0.2;
-        renderPage();
-    }
-}
-
-function clearSelection(){
-    document.querySelectorAll(".item").forEach(i=>i.classList.remove("selected"));
-}
-
-async function savePNG(){
-    clearSelection();
-
-    const finalCanvas = await html2canvas(editor,{
-        scale:3,
-        useCORS:true,
-        backgroundColor:null
-    });
-
-    const link=document.createElement("a");
-    link.download="edited-template.png";
-    link.href=finalCanvas.toDataURL("image/png",1.0);
-    link.click();
-}
-
-async function savePDF(){
-    clearSelection();
-
-    const finalCanvas = await html2canvas(editor,{
-        scale:3,
-        useCORS:true,
-        backgroundColor:"#ffffff"
-    });
-
-    const imgData = finalCanvas.toDataURL("image/png",1.0);
-
-    const { jsPDF } = window.jspdf;
-
-    const pdfWidth = finalCanvas.width;
-    const pdfHeight = finalCanvas.height;
-
-    const pdf = new jsPDF({
-        orientation: pdfWidth > pdfHeight ? "landscape" : "portrait",
-        unit:"px",
-        format:[pdfWidth,pdfHeight],
-        compress:false
-    });
-
-    pdf.addImage(imgData,"PNG",0,0,pdfWidth,pdfHeight,undefined,"FAST");
-    pdf.save("edited-template-hd.pdf");
-}
-
-function rgbToHex(rgb){
-    if(!rgb || rgb.startsWith("#")) return rgb || "#000000";
-
-    const nums=rgb.match(/\d+/g);
-    if(!nums) return "#000000";
-
-    return "#" + nums.slice(0,3).map(x=>{
-        const hex=parseInt(x).toString(16);
-        return hex.length===1 ? "0"+hex : hex;
-    }).join("");
+  link.click();
 }
 </script>
 
