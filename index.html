@@ -158,23 +158,38 @@ const canvas = new fabric.Canvas('canvas', {
 });
 
 /* =========================================================
-   HISTORY
+   HISTORY SYSTEM FIXED
 ========================================================= */
 
 let history = [];
 let redoHistory = [];
+let isUndoRedo = false;
+
+/* SAVE HISTORY */
 
 function saveHistory() {
+
+    // 🚫 prevent history during undo/redo loading
+    if (isUndoRedo) return;
+
     redoHistory = [];
 
     const json = JSON.stringify(canvas.toJSON());
 
+    // 🚫 avoid duplicate states
+    if (history.length > 0 && history[history.length - 1] === json) {
+        return;
+    }
+
     history.push(json);
 
-    if(history.length > 50){
+    // limit history
+    if (history.length > 50) {
         history.shift();
     }
 }
+
+/* EVENTS */
 
 canvas.on('object:added', saveHistory);
 canvas.on('object:modified', saveHistory);
@@ -184,16 +199,23 @@ canvas.on('object:removed', saveHistory);
    UNDO
 ========================================================= */
 
-function undo(){
+function undo() {
 
-    if(history.length < 2) return;
+    if (history.length <= 1) return;
 
+    isUndoRedo = true;
+
+    // current state -> redo
     redoHistory.push(history.pop());
 
-    const previous = history[history.length - 1];
+    // previous state
+    const previousState = history[history.length - 1];
 
-    canvas.loadFromJSON(previous, () => {
+    canvas.loadFromJSON(previousState, function () {
+
         canvas.renderAll();
+
+        isUndoRedo = false;
     });
 }
 
@@ -201,18 +223,30 @@ function undo(){
    REDO
 ========================================================= */
 
-function redo(){
+function redo() {
 
-    if(redoHistory.length === 0) return;
+    if (redoHistory.length === 0) return;
 
-    const state = redoHistory.pop();
+    isUndoRedo = true;
 
-    history.push(state);
+    const nextState = redoHistory.pop();
 
-    canvas.loadFromJSON(state, () => {
+    history.push(nextState);
+
+    canvas.loadFromJSON(nextState, function () {
+
         canvas.renderAll();
+
+        isUndoRedo = false;
     });
 }
+
+/* =========================================================
+   INITIAL STATE
+========================================================= */
+
+saveHistory();
+
 
 /* =========================================================
    PDF UPLOAD
