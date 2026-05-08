@@ -1,218 +1,704 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>HD PDF Editor</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+<title>Advanced HD PDF Editor</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <style>
-body {
-  font-family:  Arial, Helvetica, sans-serif;
-  padding: 20px;
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
 }
 
-.toolbar {
-  margin-bottom: 10px;
-  background: #f3f3f3;
-  padding: 10px;
-  border-radius: 8px;
+body{
+    font-family: Arial, Helvetica, sans-serif;
+    background:#f5f5f5;
+    padding:20px;
 }
 
-button, input {
-  margin: 5px;
-  padding: 5px;
+h2{
+    margin-bottom:15px;
 }
 
-canvas {
-  border: 1px solid black;
+.toolbar{
+    background:white;
+    padding:15px;
+    border-radius:10px;
+    box-shadow:0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom:15px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
 }
+
+button,
+input,
+select{
+    padding:8px 10px;
+    border-radius:6px;
+    border:1px solid #ccc;
+    font-size:14px;
+}
+
+button{
+    cursor:pointer;
+    background:#222;
+    color:white;
+    border:none;
+}
+
+button:hover{
+    opacity:0.9;
+}
+
+.canvas-container{
+    border:2px solid #222;
+    background:white;
+    /* overflow:auto; */
+    max-width:100%;
+}
+
+canvas{
+    border:1px solid #aaa;
+}
+
+.color-box{
+    width:40px;
+    height:40px;
+    border:none;
+    padding:0;
+    cursor:pointer;
+}
+
 </style>
 </head>
 
 <body>
 
-<h2>HD PDF Editor</h2>
+<h2>🔥 Advanced HD PDF Editor</h2>
 
 <div class="toolbar">
-  <input type="file" id="pdfUpload">
 
-  <button onclick="addText()">Add Text</button>
-  <button onclick="makeBold()">Bold</button>
-  <button onclick="makeItalic()">Italic</button>
-  <input type="number" id="fontSize" placeholder="Font Size">
+    <!-- PDF -->
+    <input type="file" id="pdfUpload" accept=".pdf">
 
-  <input type="file" id="imgUpload">
+    <!-- TEXT -->
+    <button onclick="addText()">Add Text</button>
 
-  <button onclick="increaseSize()">Image +</button>
-  <button onclick="decreaseSize()">Image -</button>
+    <button onclick="makeBold()">Bold</button>
 
-  <button onclick="downloadPDF()">Download PDF</button>
-  <button onclick="downloadImage()">Download Image</button>
+    <button onclick="makeItalic()">Italic</button>
+
+    <input type="number" id="fontSize" placeholder="Font Size" value="44">
+
+    <!-- FONT FAMILY -->
+    <select id="fontFamily">
+        <option value="Arial">Arial</option>
+        <option value="Times New Roman">Times New Roman</option>
+        <option value="Courier New">Courier New</option>
+        <option value="Verdana">Verdana</option>
+        <option value="Georgia">Georgia</option>
+        <option value="Tahoma">Tahoma</option>
+    </select>
+
+    <!-- FONT COLOR -->
+    <input type="color" id="fontColor" class="color-box">
+
+    <!-- EYE DROPPER -->
+    <button onclick="pickColor()">Eyedropper</button>
+
+    <!-- IMAGE -->
+    <input type="file" id="imgUpload" accept="image/*">
+
+    <button onclick="increaseSize()">Image +</button>
+
+    <button onclick="decreaseSize()">Image -</button>
+
+    <!-- DELETE -->
+    <button onclick="deleteSelected()">Delete</button>
+
+    <!-- ERASER -->
+    <button onclick="eraseSelected()">Erase Selected</button>
+
+    <!-- UNDO REDO -->
+    <button onclick="undo()">Undo</button>
+
+    <button onclick="redo()">Redo</button>
+
+    <!-- DOWNLOAD -->
+    <button onclick="downloadPDF()">Download PDF</button>
+
+    <button onclick="downloadImage()">Download Image</button>
+
 </div>
 
-<canvas id="canvas"></canvas>
+<div class="canvas-container">
+    <canvas id="canvas"></canvas>
+</div>
 
 <script>
-// 🔥 High DPI setting
-fabric.devicePixelRatio = 3;
 
-const canvas = new fabric.Canvas('canvas');
+/* =========================================================
+   HIGH DPI
+========================================================= */
 
-/* ---------------- PDF Upload (HD Render) ---------------- */
-document.getElementById('pdfUpload').addEventListener('change', function(e) {
-  const file = e.target.files[0];
-  const reader = new FileReader();
+fabric.devicePixelRatio = window.devicePixelRatio || 2;
 
-  reader.onload = function() {
-    const typedarray = new Uint8Array(this.result);
+const canvas = new fabric.Canvas('canvas', {
+    preserveObjectStacking: true
+});
 
-    pdfjsLib.getDocument(typedarray).promise.then(pdf => {
-      pdf.getPage(1).then(page => {
+/* =========================================================
+   HISTORY
+========================================================= */
 
-        const scale = 3; // 🔥 HIGH QUALITY
-        const viewport = page.getViewport({ scale });
+let history = [];
+let redoHistory = [];
 
-        const tempCanvas = document.createElement('canvas');
-        const context = tempCanvas.getContext('2d');
+function saveHistory() {
+    redoHistory = [];
 
-        tempCanvas.width = viewport.width;
-        tempCanvas.height = viewport.height;
+    const json = JSON.stringify(canvas.toJSON());
 
-        page.render({
-          canvasContext: context,
-          viewport: viewport
-        }).promise.then(() => {
+    history.push(json);
 
-          const imgData = tempCanvas.toDataURL("image/png");
+    if(history.length > 50){
+        history.shift();
+    }
+}
 
-          fabric.Image.fromURL(imgData, function(img) {
-            img.selectable = false;
+canvas.on('object:added', saveHistory);
+canvas.on('object:modified', saveHistory);
+canvas.on('object:removed', saveHistory);
 
-            canvas.setWidth(img.width);
-            canvas.setHeight(img.height);
+/* =========================================================
+   UNDO
+========================================================= */
 
-            canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
-          });
+function undo(){
+
+    if(history.length < 2) return;
+
+    redoHistory.push(history.pop());
+
+    const previous = history[history.length - 1];
+
+    canvas.loadFromJSON(previous, () => {
+        canvas.renderAll();
+    });
+}
+
+/* =========================================================
+   REDO
+========================================================= */
+
+function redo(){
+
+    if(redoHistory.length === 0) return;
+
+    const state = redoHistory.pop();
+
+    history.push(state);
+
+    canvas.loadFromJSON(state, () => {
+        canvas.renderAll();
+    });
+}
+
+/* =========================================================
+   PDF UPLOAD
+========================================================= */
+
+/* =========================================================
+   ULTRA HD PDF IMPORT
+========================================================= */
+
+document.getElementById('pdfUpload').addEventListener('change', function (e) {
+
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = function () {
+
+        const typedarray = new Uint8Array(this.result);
+
+        pdfjsLib.getDocument({
+            data: typedarray
+        }).promise.then(async (pdf) => {
+
+            const page = await pdf.getPage(1);
+
+            // 🔥 VERY IMPORTANT
+            // Higher scale = better imported quality
+            const scale = 5;
+
+            const viewport = page.getViewport({ scale });
+
+            const tempCanvas = document.createElement('canvas');
+
+            const context = tempCanvas.getContext('2d', {
+                alpha: false
+            });
+
+            // 🔥 HD dimensions
+            tempCanvas.width = viewport.width;
+            tempCanvas.height = viewport.height;
+
+            // 🔥 Improve rendering quality
+            context.imageSmoothingEnabled = true;
+            context.imageSmoothingQuality = "high";
+
+            await page.render({
+                canvasContext: context,
+                viewport: viewport
+            }).promise;
+
+            // 🔥 Maximum quality PNG
+            const imgData = tempCanvas.toDataURL('image/png', 1.0);
+
+            fabric.Image.fromURL(imgData, function (img) {
+
+                img.set({
+                    selectable: false,
+                    evented: false,
+                    objectCaching: false
+                });
+
+                // 🔥 Keep full resolution
+                canvas.setWidth(img.width);
+                canvas.setHeight(img.height);
+
+                canvas.setBackgroundImage(
+                    img,
+                    canvas.renderAll.bind(canvas),
+                    {
+                        scaleX: 1,
+                        scaleY: 1
+                    }
+                );
+
+                canvas.renderAll();
+
+            });
 
         });
-      });
-    });
-  };
 
-  reader.readAsArrayBuffer(file);
+    };
+
+    reader.readAsArrayBuffer(file);
+
 });
 
-/* ---------------- Text ---------------- */
-function addText() {
-  const text = new fabric.IText("Edit me", {
-    left: 100,
-    top: 100,
-    fontSize: 30,
-    fontFamily: "Arial, Helvetica, sans-serif",
-    // fontWeight:600
-    
-  });
-  canvas.add(text);
-}
 
-function makeBold() {
-  const obj = canvas.getActiveObject();
-  if (obj) {
-    obj.set("fontWeight", obj.fontWeight === "bold" ? "normal" : "bold");
-    canvas.renderAll();
-  }
-}
 
-function makeItalic() {
-  const obj = canvas.getActiveObject();
-  if (obj) {
-    obj.set("fontStyle", obj.fontStyle === "italic" ? "normal" : "italic");
-    canvas.renderAll();
-  }
-}
 
-document.getElementById('fontSize').addEventListener('change', function() {
-  const obj = canvas.getActiveObject();
-  if (obj) {
-    obj.set("fontSize", parseInt(this.value));
-    canvas.renderAll();
-  }
-});
 
-/* ---------------- Image Upload ---------------- */
-document.getElementById('imgUpload').addEventListener('change', function(e) {
-  const file = e.target.files[0];
-  const reader = new FileReader();
 
-  reader.onload = function() {
-    fabric.Image.fromURL(this.result, function(img) {
-      img.set({
+/* =========================================================
+   ADD TEXT
+========================================================= */
+
+function addText(){
+
+    const color = document.getElementById("fontColor").value;
+
+    const family = document.getElementById("fontFamily").value;
+
+    const text = new fabric.IText("Edit Text", {
+
         left: 100,
         top: 100,
-        scaleX: 0.5,
-        scaleY: 0.5
-      });
-      canvas.add(img);
-    });
-  };
+        fontSize: 44,
+        fill: color,
+        fontFamily: family
 
-  reader.readAsDataURL(file);
+    });
+
+    canvas.add(text);
+
+    canvas.setActiveObject(text);
+
+}
+
+/* =========================================================
+   BOLD
+========================================================= */
+
+function makeBold(){
+
+    const obj = canvas.getActiveObject();
+
+    if(obj && obj.type.includes("text")){
+
+        obj.set(
+            "fontWeight",
+            obj.fontWeight === "bold" ? "normal" : "bold"
+        );
+
+        canvas.renderAll();
+    }
+}
+
+/* =========================================================
+   ITALIC
+========================================================= */
+
+function makeItalic(){
+
+    const obj = canvas.getActiveObject();
+
+    if(obj && obj.type.includes("text")){
+
+        obj.set(
+            "fontStyle",
+            obj.fontStyle === "italic" ? "normal" : "italic"
+        );
+
+        canvas.renderAll();
+    }
+}
+
+/* =========================================================
+   FONT SIZE
+========================================================= */
+
+document.getElementById('fontSize').addEventListener('change', function(){
+
+    const obj = canvas.getActiveObject();
+
+    if(obj && obj.type.includes("text")){
+
+        obj.set("fontSize", parseInt(this.value));
+
+        canvas.renderAll();
+    }
+
 });
 
-/* ---------------- Image Resize Buttons ---------------- */
-function increaseSize() {
-  const obj = canvas.getActiveObject();
-  if (obj && obj.type === 'image') {
-    obj.scaleX += 0.1;
-    obj.scaleY += 0.1;
-    canvas.renderAll();
-  }
+/* =========================================================
+   FONT FAMILY
+========================================================= */
+
+document.getElementById('fontFamily').addEventListener('change', function(){
+
+    const obj = canvas.getActiveObject();
+
+    if(obj && obj.type.includes("text")){
+
+        obj.set("fontFamily", this.value);
+
+        canvas.renderAll();
+    }
+
+});
+
+/* =========================================================
+   FONT COLOR
+========================================================= */
+
+document.getElementById('fontColor').addEventListener('input', function(){
+
+    const obj = canvas.getActiveObject();
+
+    if(obj && obj.type.includes("text")){
+
+        obj.set("fill", this.value);
+
+        canvas.renderAll();
+    }
+
+});
+
+/* =========================================================
+   EYE DROPPER
+========================================================= */
+
+async function pickColor(){
+
+    if (!window.EyeDropper) {
+        alert("Eyedropper not supported in this browser");
+        return;
+    }
+
+    const eyeDropper = new EyeDropper();
+
+    try {
+
+        const result = await eyeDropper.open();
+
+        document.getElementById("fontColor").value = result.sRGBHex;
+
+        const obj = canvas.getActiveObject();
+
+        if(obj && obj.type.includes("text")){
+
+            obj.set("fill", result.sRGBHex);
+
+            canvas.renderAll();
+        }
+
+    } catch (e) {
+        console.log(e);
+    }
 }
 
-function decreaseSize() {
-  const obj = canvas.getActiveObject();
-  if (obj && obj.type === 'image') {
-    obj.scaleX -= 0.1;
-    obj.scaleY -= 0.1;
-    canvas.renderAll();
-  }
+/* =========================================================
+   IMAGE UPLOAD
+========================================================= */
+
+document.getElementById('imgUpload').addEventListener('change', function(e){
+
+    const file = e.target.files[0];
+
+    if(!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = function(){
+
+        fabric.Image.fromURL(this.result, function(img){
+
+            // ORIGINAL QUALITY
+            img.set({
+                left: 100,
+                top: 100,
+                scaleX: 1,
+                scaleY: 1
+            });
+
+            canvas.add(img);
+
+            canvas.setActiveObject(img);
+
+        }, {
+            crossOrigin: 'anonymous'
+        });
+
+    };
+
+    reader.readAsDataURL(file);
+
+});
+
+/* =========================================================
+   IMAGE SIZE +
+========================================================= */
+
+function increaseSize(){
+
+    const obj = canvas.getActiveObject();
+
+    if(obj && obj.type === 'image'){
+
+        obj.scaleX += 0.1;
+        obj.scaleY += 0.1;
+
+        canvas.renderAll();
+    }
 }
 
-/* ---------------- Download PDF (HD) ---------------- */
-function downloadPDF() {
-  const { jsPDF } = window.jspdf;
+/* =========================================================
+   IMAGE SIZE -
+========================================================= */
 
-  const imgData = canvas.toDataURL({
-    format: "jpeg",
-    quality: 0.8,
-    multiplier: 2
-  });
+function decreaseSize(){
 
-  const pdf = new jsPDF({
-    orientation: "portrait",
-    unit: "px",
-    format: [canvas.width, canvas.height]
-  });
+    const obj = canvas.getActiveObject();
 
-  pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
-  pdf.save("edited.pdf");
+    if(obj && obj.type === 'image'){
+
+        obj.scaleX -= 0.1;
+        obj.scaleY -= 0.1;
+
+        canvas.renderAll();
+    }
 }
 
-/* ---------------- Download Image (HD) ---------------- */
+/* =========================================================
+   DELETE
+========================================================= */
+
+function deleteSelected(){
+
+    const obj = canvas.getActiveObject();
+
+    if(obj){
+
+        canvas.remove(obj);
+
+    }
+}
+
+/* =========================================================
+   ERASER (ONLY OBJECTS)
+========================================================= */
+
+function eraseSelected(){
+
+    const obj = canvas.getActiveObject();
+
+    if(obj){
+
+        canvas.remove(obj);
+
+    }
+}
+
+/* =========================================================
+   DELETE KEY SUPPORT
+========================================================= */
+
+document.addEventListener('keydown', function(e){
+
+    if(e.key === "Delete"){
+
+        deleteSelected();
+    }
+
+});
+
+/* =========================================================
+   DOWNLOAD PDF
+========================================================= */
+
+function downloadPDF(){
+
+    const { jsPDF } = window.jspdf;
+
+    const imgData = canvas.toDataURL({
+
+        format: 'jpeg',
+
+        quality: 1,
+
+        multiplier: 3
+
+    });
+
+    const pdf = new jsPDF({
+
+        orientation:
+            canvas.width > canvas.height
+            ? 'landscape'
+            : 'portrait',
+
+        unit: 'px',
+
+        format: [canvas.width, canvas.height],
+
+        compress: true
+
+    });
+
+    pdf.addImage(
+        imgData,
+        'JPEG',
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+        '',
+        'FAST'
+    );
+
+    pdf.save("HD_edited.pdf");
+}
+
+/* =========================================================
+   DOWNLOAD IMAGE FIXED
+========================================================= */
+
 function downloadImage() {
-  const link = document.createElement("a");
 
-  link.download = "image.png";
-  link.href = canvas.toDataURL({
-    format: "png",
-    multiplier: 3 // 🔥 HD
-  });
+    const link = document.createElement("a");
 
-  link.click();
+    link.download = "HD_Image.png";
+
+    link.href = canvas.toDataURL({
+
+        format: 'png',
+
+        quality: 1,
+
+        multiplier: 2
+
+    });
+
+    document.body.appendChild(link);
+
+    link.click();
+
+    document.body.removeChild(link);
 }
+
+
+
+
+
+
+
+
+
+
+// function downloadImage() {
+
+//     // 🔥 create high quality image
+//     const imgData = canvas.toDataURL({
+
+//         format: 'png',
+
+//         quality: 1,
+
+//         multiplier: 2   // reduced from 4
+
+//     });
+
+//     // 🔥 open in new tab
+//     const newTab = window.open();
+
+//     if (!newTab) {
+
+//         alert("Popup blocked. Allow popups for this site.");
+//         return;
+//     }
+
+//     newTab.document.write(`
+//         <title>HD Image</title>
+//         <style>
+//             body{
+//                 margin:0;
+//                 display:flex;
+//                 justify-content:center;
+//                 align-items:center;
+//                 background:#111;
+//             }
+//             img{
+//                 max-width:100%;
+//                 height:auto;
+//             }
+//         </style>
+//         <img src="${imgData}">
+//     `);
+// }
+
+/* =========================================================
+   INITIAL HISTORY
+========================================================= */
+
+saveHistory();
+
 </script>
 
 </body>
